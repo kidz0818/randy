@@ -42,6 +42,7 @@ export interface FanCinemaLightboardProps {
   onChangeCharInterval?: (interval: number) => void;
   splitLatinWords?: boolean;
   onChangeSplitLatinWords?: (val: boolean) => void;
+  renderTime?: number; // Export clock in seconds; disables live timers.
   onCharChange?: (charIndex: number, char: string) => void;
 }
 
@@ -67,6 +68,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
   splitLatinWords = false,
   onChangeSplitLatinWords,
   onCharChange,
+  renderTime,
 }) => {
   // Break text into character tokens
   const tokens = useMemo(() => {
@@ -74,7 +76,9 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
   }, [greetingTitle, greetingBody, senderName, splitLatinWords]);
 
   // Current looping character index
-  const [currentCharIndex, setCurrentCharIndex] = useState(0);
+  const [liveCharIndex, setCurrentCharIndex] = useState(0);
+  const currentCharIndex = renderTime === undefined ? liveCharIndex
+    : (isLooping ? Math.floor(renderTime / Math.max(0.15, charInterval)) % Math.max(1, tokens.length) : 0);
   const [localLooping, setLocalLooping] = useState(isLooping);
 
   // Sync external looping state
@@ -115,7 +119,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
 
   // Auto-looping timer effect for 'single-char-loop' mode
   useEffect(() => {
-    if (layout !== 'single-char-loop' || !localLooping || tokens.length === 0) {
+    if (renderTime !== undefined || layout !== 'single-char-loop' || !localLooping || tokens.length === 0) {
       return;
     }
 
@@ -131,14 +135,14 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
     }, Math.max(150, charInterval * 1000));
 
     return () => clearInterval(timer);
-  }, [layout, localLooping, tokens.length, charInterval, onCharChange]);
+  }, [layout, localLooping, tokens.length, charInterval, onCharChange, renderTime]);
 
   // Handle global shuffle
   const [fullProgress, setFullProgress] = useState(1);
   const [fullSeed, setFullSeed] = useState(0);
 
   useEffect(() => {
-    if (!isShuffling) {
+    if (renderTime !== undefined || !isShuffling) {
       setFullProgress(1);
       return;
     }
@@ -162,7 +166,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [isShuffling]);
+  }, [isShuffling, renderTime]);
 
   // Manual next/prev char controls
   const handleNextChar = () => {
@@ -204,6 +208,17 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
     if (charScrambleProgress >= 1) return activeToken.char;
     return getScrambledText(activeToken.char, charScrambleProgress, charScrambleSeed);
   }, [activeToken.char, charScrambleProgress, charScrambleSeed]);
+
+  // Both the live view and export use the same text, sizes, themes and markup.
+  const exportInterval = Math.max(0.15, charInterval);
+  const scrambleDuration = Math.min(0.22, exportInterval * 0.45);
+  const exportCharProgress = renderTime === undefined || !isLooping || renderTime < exportInterval
+    ? 1 : Math.min(1, (renderTime % exportInterval) / scrambleDuration);
+  const renderedChar = renderTime === undefined ? displaySingleChar
+    : getScrambledText(activeToken.char, exportCharProgress, Math.floor(renderTime * 60));
+  const renderedProgress = renderTime === undefined ? fullProgress
+    : (isShuffling ? Math.min(1, renderTime / 1.8) : 1);
+  const renderedSeed = renderTime === undefined ? fullSeed : Math.floor(renderTime * 60);
 
   // Themes
   // Themes with rich luminous neon lightboard styling
@@ -403,7 +418,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
                   fontSize: `${effectiveCharSize}px`,
                 }}
               >
-                {displaySingleChar}
+                {renderedChar}
               </div>
 
               {/* Foreground Massive Pixel Character */}
@@ -417,7 +432,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
                   textShadow: `0 0 30px ${style.bulbColor}, 0 0 60px ${style.bulbColor}`,
                 }}
               >
-                {displaySingleChar}
+                {renderedChar}
               </div>
             </div>
 
@@ -460,6 +475,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
               <div className="flex items-center justify-between mt-1 px-1">
                 {/* Prev Char */}
                 <button
+                    data-export-control="true"
                   type="button"
                   onClick={handlePrevChar}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-zinc-200 hover:text-white transition cursor-pointer"
@@ -472,6 +488,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
                 {/* Center: Play/Pause Loop & Shuffle */}
                 <div className="flex items-center gap-2">
                   <button
+                    data-export-control="true"
                     type="button"
                     onClick={toggleLoop}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold font-pixel transition cursor-pointer shadow-md ${
@@ -495,6 +512,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
 
                   {/* Shuffle Button */}
                   <button
+                    data-export-control="true"
                     type="button"
                     onClick={() => {
                       triggerCharScramble();
@@ -510,6 +528,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
 
                 {/* Next Char */}
                 <button
+                    data-export-control="true"
                   type="button"
                   onClick={handleNextChar}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-zinc-200 hover:text-white transition cursor-pointer"
@@ -552,9 +571,9 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
   // 用户定制：上下框具备影院跑马灯灯牌质感、贺语与名字100%完全展示、多重霓虹发亮效果
   // =========================================================================
   if (layout === 'vertical-tower') {
-    const vTitle = getScrambledText(greetingTitle, fullProgress, fullSeed);
-    const vBody = getScrambledText(greetingBody, fullProgress, fullSeed + 17);
-    const vName = getScrambledText(senderName, fullProgress, fullSeed + 43);
+    const vTitle = getScrambledText(greetingTitle, renderedProgress, renderedSeed);
+    const vBody = getScrambledText(greetingBody, renderedProgress, renderedSeed + 17);
+    const vName = getScrambledText(senderName, renderedProgress, renderedSeed + 43);
 
     const titleChars = Array.from(vTitle);
     const bodyChars = Array.from(vBody);
@@ -635,8 +654,9 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
                 </div>
 
                 {/* 1-Col vs 2-Col Quick Switcher on Header */}
-                <div className="flex items-center gap-1 bg-zinc-900/90 p-1 rounded-xl border border-white/15 shadow-inner">
+                <div data-export-control="true" className="flex items-center gap-1 bg-zinc-900/90 p-1 rounded-xl border border-white/15 shadow-inner">
                   <button
+                    data-export-control="true"
                     type="button"
                     onClick={() => onChangeGreetingColumns?.(1)}
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-pixel font-bold transition cursor-pointer ${
@@ -649,6 +669,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
                     1 排贺语
                   </button>
                   <button
+                    data-export-control="true"
                     type="button"
                     onClick={() => onChangeGreetingColumns?.(2)}
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-pixel font-bold transition cursor-pointer ${
@@ -664,6 +685,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
 
                 {/* Shuffle Button on Header */}
                 <button
+                    data-export-control="true"
                   type="button"
                   onClick={() => {
                     triggerCharScramble();
@@ -853,9 +875,9 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
   // =========================================================================
   // LAYOUT 3: CLASSIC 3-TIER MARQUEE BOARD (经典三行影院卡片灯牌)
   // =========================================================================
-  const displayTitle = getScrambledText(greetingTitle, fullProgress, fullSeed);
-  const displayBody = getScrambledText(greetingBody, fullProgress, fullSeed + 17);
-  const displayName = getScrambledText(senderName, fullProgress, fullSeed + 43);
+  const displayTitle = getScrambledText(greetingTitle, renderedProgress, renderedSeed);
+  const displayBody = getScrambledText(greetingBody, renderedProgress, renderedSeed + 17);
+  const displayName = getScrambledText(senderName, renderedProgress, renderedSeed + 43);
 
   return (
     <div
@@ -903,6 +925,7 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
 
             {onTriggerShuffle && (
               <button
+                    data-export-control="true"
                 type="button"
                 onClick={onTriggerShuffle}
                 className="flex items-center gap-1 px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px] text-zinc-300 hover:text-white transition-all cursor-pointer font-pixel"
@@ -995,3 +1018,4 @@ export const FanCinemaLightboard: React.FC<FanCinemaLightboardProps> = ({
     </div>
   );
 };
+
