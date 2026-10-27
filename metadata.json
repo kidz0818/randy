@@ -1,0 +1,6 @@
+{
+  "name": "StreamChat Studio: Transparent Chat & SuperChat Overlay Generator",
+  "description": "512x2400 vertical live chat & YouTube SuperChat simulator with custom avatars, dynamic entrance VFX, playback pacing controls, and transparent video export for video editors.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
