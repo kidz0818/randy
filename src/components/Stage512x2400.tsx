@@ -2,8 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { ChatMessage, PlaybackSettings } from '../types/chat';
 import { BubbleCard } from './BubbleCard';
 import { ParticleSystem } from '../utils/particles';
-import {
-  FanCinemaLightboard,
+import { LightboardScene } from './LightboardScene';
+import type {
   LightboardTheme,
   LightboardLayout,
 } from './FanCinemaLightboard';
@@ -154,38 +154,15 @@ export const Stage512x2400: React.FC<Stage512x2400Props> = ({
           {/* Content Layer based on displayMode */}
           {displayMode === 'fan-lightboard' && lightboardState ? (
             /* Mode 1: Fan Cinema Pixel Marquee Lightboard */
-            <div
-              className={`absolute inset-0 px-2 flex flex-col z-10 box-border pointer-events-auto ${
-                lightboardState.layout === 'vertical-tower'
-                  ? 'justify-center items-center py-4'
-                  : lightboardState.layout === 'single-char-loop'
-                  ? 'justify-center items-center py-12'
-                  : 'justify-end pb-32 items-center'
-              }`}
-            >
-              <FanCinemaLightboard
-                greetingTitle={lightboardState.greetingTitle}
-                greetingBody={lightboardState.greetingBody}
-                senderName={lightboardState.senderName}
-                theme={lightboardState.theme}
-                layout={lightboardState.layout}
-                titleSize={lightboardState.titleSize}
-                bodySize={lightboardState.bodySize}
-                nameSize={lightboardState.nameSize}
-                charSize={lightboardState.charSize}
-                greetingColumns={lightboardState.greetingColumns}
-                onChangeGreetingColumns={onChangeGreetingColumns}
-                isShuffling={lightboardState.isShuffling}
-                onTriggerShuffle={onTriggerShuffle}
-                isLooping={lightboardState.isLooping}
-                onToggleLoop={onToggleLoop}
-                charInterval={lightboardState.charInterval}
-                onChangeCharInterval={onChangeCharInterval}
-                splitLatinWords={lightboardState.splitLatinWords}
-                onChangeSplitLatinWords={onChangeSplitLatinWords}
-                scale={lightboardState.layout === 'vertical-tower' ? 1 : settings.bubbleScale}
-              />
-            </div>
+            <LightboardScene
+              state={lightboardState}
+              scale={settings.bubbleScale}
+              onChangeGreetingColumns={onChangeGreetingColumns}
+              onTriggerShuffle={onTriggerShuffle}
+              onToggleLoop={onToggleLoop}
+              onChangeCharInterval={onChangeCharInterval}
+              onChangeSplitLatinWords={onChangeSplitLatinWords}
+            />
           ) : (
             /* Mode 2: Multi-bubble Livestream Stack */
             <div
@@ -231,3 +208,4 @@ export const Stage512x2400: React.FC<Stage512x2400Props> = ({
     </div>
   );
 };
+

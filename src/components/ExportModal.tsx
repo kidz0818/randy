@@ -3,13 +3,13 @@ import { ChatMessage, PlaybackSettings } from '../types/chat';
 import { calculateTotalRuntime } from '../utils/timeline';
 import {
   ExportProgress,
-  recordStreamToWebM,
+  exportFramesToWebM,
   exportFrameSequenceZip,
   downloadBlob,
 } from '../utils/videoExporter';
 import { SUPERCHAT_TIERS } from '../utils/superchat';
-import { getScrambledText } from '../utils/shuffleText';
 import { segmentGreetingToChars } from '../utils/charLoop';
+import { createLightboardRenderer } from '../utils/lightboardRenderer';
 import { LightboardState } from './Stage512x2400';
 import {
   Download,
@@ -39,7 +39,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   displayMode = 'fan-lightboard',
   lightboardState,
 }) => {
-  const [exportFormat, setExportFormat] = useState<'webm-alpha' | 'png-sequence' | 'chroma-green'>('webm-alpha');
+  const [exportFormat, setExportFormat] = useState<'webm' | 'png-sequence' | 'chroma-green'>('png-sequence');
+  const [transparentBackground, setTransparentBackground] = useState(false);
   const [fps, setFps] = useState<30 | 60>(30);
   const [isExporting, setIsExporting] = useState(false);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
@@ -56,7 +57,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         lightboardState.splitLatinWords
       );
       const interval = lightboardState.charInterval || 0.55;
-      totalDuration = Number(Math.max(6.0, Math.min(30.0, tokens.length * interval)).toFixed(1));
+      totalDuration = Number(Math.max(6.0, tokens.length * Math.max(0.15, interval)).toFixed(1));
     } else {
       totalDuration = 5.0;
     }
@@ -81,331 +82,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     if (bgMode === 'chroma-green') {
       ctx.fillStyle = '#00FF00';
       ctx.fillRect(0, 0, 512, 2400);
-    }
-
-    if (displayMode === 'fan-lightboard' && lightboardState) {
-      ctx.save();
-
-      // ==========================================
-      // Mode 1: Single-Char Fullscreen Loop
-      // ==========================================
-      if (lightboardState.layout === 'single-char-loop') {
-        const tokens = segmentGreetingToChars(
-          lightboardState.greetingTitle,
-          lightboardState.greetingBody,
-          lightboardState.senderName,
-          lightboardState.splitLatinWords
-        );
-        const interval = lightboardState.charInterval || 0.55;
-        const totalTokens = tokens.length || 1;
-        const charIdx = Math.floor(timeSec / interval) % totalTokens;
-        const activeTok = tokens[charIdx] || { char: 'ユ', section: 'title' };
-
-        const timeInChar = timeSec % interval;
-        const scrambleP = Math.min(1, timeInChar / 0.16);
-        const seed = Math.floor(timeSec * 35);
-        const dispChar = scrambleP >= 1 ? activeTok.char : getScrambledText(activeTok.char, scrambleP, seed);
-
-        const boardW = 490;
-        const boardH = 680;
-        const boardX = 11;
-        const boardY = (2400 - boardH) / 2; // vertically centered in 2400
-
-        // Outer Marquee Frame
-        ctx.beginPath();
-        ctx.roundRect(boardX, boardY, boardW, boardH, 24);
-        ctx.fillStyle = '#09090b';
-        ctx.fill();
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = lightboardState.theme === 'cinema-gold' ? '#FBBF24' : '#FB7185';
-        ctx.stroke();
-
-        // Inner Screen
-        const innerM = 12;
-        const innerX = boardX + innerM;
-        const innerY = boardY + innerM;
-        const innerW = boardW - innerM * 2;
-        const innerH = boardH - innerM * 2;
-
-        ctx.beginPath();
-        ctx.roundRect(innerX, innerY, innerW, innerH, 18);
-        ctx.fillStyle = '#030712';
-        ctx.fill();
-
-        // Header
-        ctx.font = 'bold 12px "DotGothic16", monospace';
-        ctx.fillStyle = lightboardState.theme === 'cinema-gold' ? '#FDE047' : '#FDA4AF';
-        ctx.textAlign = 'center';
-        ctx.fillText(`★ CELEBRATION [${charIdx + 1}/${totalTokens} 字] ★`, 256, innerY + 36);
-
-        // Subheader
-        ctx.font = '11px "DotGothic16", monospace';
-        ctx.fillStyle = '#9CA3AF';
-        ctx.fillText('ユノちへ贈るお祝い点阵ボード', 256, innerY + 60);
-
-        // Giant Character
-        let fSize = lightboardState.charSize || 340;
-        if (activeTok.char.length > 8) fSize = Math.min(68, fSize * 0.22);
-        else if (activeTok.char.length > 4) fSize = Math.min(96, fSize * 0.32);
-        else if (activeTok.char.length > 1) fSize = Math.min(180, fSize * 0.55);
-
-        ctx.font = `900 ${fSize}px "DotGothic16", monospace`;
-        ctx.fillStyle = lightboardState.theme === 'cinema-gold' ? '#FFDF00' : '#FDA4AF';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.shadowColor = lightboardState.theme === 'cinema-gold' ? 'rgba(251, 191, 36, 0.95)' : 'rgba(251, 113, 133, 0.95)';
-        ctx.shadowBlur = 40;
-        ctx.fillText(dispChar, 256, innerY + innerH / 2);
-        ctx.shadowBlur = 0; // reset
-
-        // Bottom Sender Line with Hearts
-        ctx.textBaseline = 'alphabetic';
-        ctx.font = 'bold 13px "DotGothic16", monospace';
-        ctx.fillStyle = '#FFD700';
-        ctx.fillText(`💖 SENDER: ${lightboardState.senderName} 💖`, 256, innerY + innerH - 28);
-
-        ctx.restore();
-        return;
-      }
-
-      // ==========================================
-      // Mode 2: Vertical Full-Screen Tower (2400px 贯穿三联竖排灯塔)
-      // ==========================================
-      if (lightboardState.layout === 'vertical-tower') {
-        const boardWidth = 496;
-        const boardHeight = 2360;
-        const boardX = 8;
-        const boardY = 20;
-
-        const shuffleP = Math.min(1, timeSec / 1.6);
-        const seed = Math.floor(timeSec * 32);
-        const dispTitle = getScrambledText(lightboardState.greetingTitle, shuffleP, seed);
-        const dispBody = getScrambledText(lightboardState.greetingBody, shuffleP, seed + 17);
-        const dispName = getScrambledText(lightboardState.senderName, shuffleP, seed + 43);
-
-        const titleChars = Array.from(dispTitle);
-        const bodyChars = Array.from(dispBody);
-        const nameChars = Array.from(dispName);
-
-        const bulbColor = lightboardState.theme === 'cinema-gold' ? '#FBBF24' : '#FB7185';
-        const titleColor = lightboardState.theme === 'cinema-gold' ? '#FDE047' : '#FDA4AF';
-        const bodyColor = lightboardState.theme === 'cinema-gold' ? '#FEF08A' : '#FFE4E6';
-        const nameColor = '#FFD700';
-
-        // Outer Marquee Tower Frame
-        ctx.beginPath();
-        ctx.roundRect(boardX, boardY, boardWidth, boardHeight, 28);
-        ctx.fillStyle = '#09090b';
-        ctx.fill();
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = bulbColor;
-        ctx.stroke();
-
-        // Top Bulbs Row (18 bulbs)
-        const bulbCount = 18;
-        const stepX = (boardWidth - 40) / (bulbCount - 1);
-        for (let i = 0; i < bulbCount; i++) {
-          const bx = boardX + 20 + i * stepX;
-          const by = boardY + 16;
-          ctx.beginPath();
-          ctx.arc(bx, by, 4, 0, Math.PI * 2);
-          ctx.fillStyle = (i % 2 === Math.floor(timeSec * 2) % 2) ? bulbColor : 'rgba(255,255,255,0.3)';
-          ctx.fill();
-        }
-
-        // Bottom Bulbs Row (18 bulbs)
-        for (let i = 0; i < bulbCount; i++) {
-          const bx = boardX + 20 + i * stepX;
-          const by = boardY + boardHeight - 16;
-          ctx.beginPath();
-          ctx.arc(bx, by, 4, 0, Math.PI * 2);
-          ctx.fillStyle = (i % 2 !== Math.floor(timeSec * 2) % 2) ? bulbColor : 'rgba(255,255,255,0.3)';
-          ctx.fill();
-        }
-
-        // Side Vertical Bulbs (26 bulbs per side)
-        const sideCount = 26;
-        const stepY = (boardHeight - 120) / (sideCount - 1);
-        for (let i = 0; i < sideCount; i++) {
-          const by = boardY + 60 + i * stepY;
-          // Left bulb
-          ctx.beginPath();
-          ctx.arc(boardX + 10, by, 3.5, 0, Math.PI * 2);
-          ctx.fillStyle = (i % 2 === Math.floor(timeSec * 2) % 2) ? bulbColor : 'rgba(255,255,255,0.25)';
-          ctx.fill();
-
-          // Right bulb
-          ctx.beginPath();
-          ctx.arc(boardX + boardWidth - 10, by, 3.5, 0, Math.PI * 2);
-          ctx.fillStyle = (i % 2 !== Math.floor(timeSec * 2) % 2) ? bulbColor : 'rgba(255,255,255,0.25)';
-          ctx.fill();
-        }
-
-        // Inner Acrylic LED Matrix Screen
-        const innerM = 18;
-        const innerX = boardX + innerM;
-        const innerY = boardY + innerM + 12;
-        const innerW = boardWidth - innerM * 2;
-        const innerH = boardHeight - innerM * 2 - 24;
-
-        ctx.beginPath();
-        ctx.roundRect(innerX, innerY, innerW, innerH, 20);
-        ctx.fillStyle = '#030712';
-        ctx.fill();
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-        ctx.stroke();
-
-        // Top Header Plaque with VIP Sender Name (用户定制：名字在上面)
-        ctx.font = 'bold 11px "DotGothic16", monospace';
-        ctx.fillStyle = '#F472B6';
-        ctx.textAlign = 'center';
-        ctx.fillText('★ SPECIAL PRESENT · FAN LIGHTBOARD ★', 256, innerY + 28);
-
-        // Prominent Top VIP Sender Name with Hearts (用户定制：名字旁的皇冠换成爱心，字号完全跟随设定)
-        const topNameFSize = lightboardState.nameSize || 42;
-        ctx.font = `900 ${topNameFSize}px "DotGothic16", monospace`;
-        ctx.fillStyle = '#FFD700';
-        ctx.shadowColor = '#F59E0B';
-        ctx.shadowBlur = 24;
-        ctx.textBaseline = 'middle';
-        ctx.fillText(`💖 ${dispName} 💖`, 256, innerY + 66);
-        ctx.shadowBlur = 0;
-
-        ctx.font = 'bold 12px "DotGothic16", monospace';
-        ctx.fillStyle = titleColor;
-        ctx.fillText('★ ユノちへ贈るお祝い電飾ボード ★', 256, innerY + 98);
-
-        // Inner Vertical Greetings Area (无边框一体化浮空发光)
-        const greetingCols = lightboardState.greetingColumns || 2;
-        const colY = innerY + 125;
-        const colH = innerH - 180;
-
-        if (greetingCols === 1) {
-          // Option A: 1 Continuous Vertical Column (一排贺语 · 完全跟随用户设定字号)
-          const combinedChars = [...titleChars, ...bodyChars];
-          const stepY = colH / Math.max(1, combinedChars.length);
-          const fSize = lightboardState.titleSize || 42; // 直接使用用户调节的字号
-          ctx.font = `900 ${fSize}px "DotGothic16", monospace`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-
-          combinedChars.forEach((ch, idx) => {
-            const isTitle = idx < titleChars.length;
-            ctx.fillStyle = isTitle ? titleColor : bodyColor;
-            ctx.shadowColor = bulbColor;
-            ctx.shadowBlur = 25;
-            ctx.fillText(ch, 256, colY + idx * stepY + stepY / 2);
-          });
-          ctx.shadowBlur = 0;
-        } else {
-          // Option B: 2 Parallel Vertical Columns (两排贺语 · 完全跟随用户设定字号)
-          const col1X = 175;
-          const col2X = 337;
-
-          // Column 1: Title
-          const tStep = colH / Math.max(1, titleChars.length);
-          const tFSize = lightboardState.titleSize || 42; // 直接使用用户调节的祝贺字号
-          ctx.font = `900 ${tFSize}px "DotGothic16", monospace`;
-          ctx.fillStyle = titleColor;
-          ctx.shadowColor = bulbColor;
-          ctx.shadowBlur = 25;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          titleChars.forEach((ch, idx) => {
-            ctx.fillText(ch, col1X, colY + idx * tStep + tStep / 2);
-          });
-          ctx.shadowBlur = 0;
-
-          // Column 2: Body (Wish)
-          const bStep = colH / Math.max(1, bodyChars.length);
-          const bFSize = lightboardState.bodySize || 36; // 直接使用用户调节的愿望字号
-          ctx.font = `bold ${bFSize}px "DotGothic16", monospace`;
-          ctx.fillStyle = bodyColor;
-          ctx.shadowColor = bulbColor;
-          ctx.shadowBlur = 20;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          bodyChars.forEach((ch, idx) => {
-            ctx.fillText(ch, col2X, colY + idx * bStep + bStep / 2);
-          });
-          ctx.shadowBlur = 0;
-        }
-
-        // Bottom Footer Marquee Plaque
-        ctx.font = 'bold 12px "DotGothic16", monospace';
-        ctx.fillStyle = '#E5E7EB';
-        ctx.textAlign = 'center';
-        ctx.fillText('★ HAPPY BIRTHDAY DECORATION BOARD ★', 256, innerY + innerH - 24);
-
-        ctx.restore();
-        return;
-      }
-
-      // ==========================================
-      // Mode 3: Classic Marquee Board (横排经典灯牌)
-      // ==========================================
-      const bScale = Math.max(0.9, Math.min(1.4, settings.bubbleScale || 1.2));
-      const boardWidth = Math.min(504, 490);
-      const boardHeight = Math.round(340 * bScale);
-      const boardX = (512 - boardWidth) / 2;
-      const boardY = 2400 - boardHeight - 160;
-
-      const shuffleP = Math.min(1, timeSec / 1.8);
-      const seed = Math.floor(timeSec * 30);
-      const dispTitle = getScrambledText(lightboardState.greetingTitle, shuffleP, seed);
-      const dispBody = getScrambledText(lightboardState.greetingBody, shuffleP, seed + 17);
-      const dispName = getScrambledText(lightboardState.senderName, shuffleP, seed + 43);
-
-      // Outer Marquee Frame
-      ctx.beginPath();
-      ctx.roundRect(boardX, boardY, boardWidth, boardHeight, 24);
-      ctx.fillStyle = '#09090b';
-      ctx.fill();
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = lightboardState.theme === 'cinema-gold' ? '#FBBF24' : '#FB7185';
-      ctx.stroke();
-
-      // Inner LED Matrix Screen
-      const innerMargin = 12;
-      const innerX = boardX + innerMargin;
-      const innerY = boardY + innerMargin;
-      const innerW = boardWidth - innerMargin * 2;
-      const innerH = boardHeight - innerMargin * 2;
-
-      ctx.beginPath();
-      ctx.roundRect(innerX, innerY, innerW, innerH, 16);
-      ctx.fillStyle = '#030712';
-      ctx.fill();
-
-      // Header Tag
-      ctx.font = 'bold 12px "DotGothic16", monospace';
-      ctx.fillStyle = '#F472B6';
-      ctx.textAlign = 'center';
-      ctx.fillText('★ FAN CINEMA SPECIAL CELEBRATION ★', 256, innerY + 32);
-
-      // Line 1: Title (直接使用用户设定的祝贺字号)
-      ctx.font = `bold ${lightboardState.titleSize || 36}px "DotGothic16", monospace`;
-      ctx.fillStyle = lightboardState.theme === 'cinema-gold' ? '#FDE047' : '#FDA4AF';
-      ctx.fillText(dispTitle, 256, innerY + 85);
-
-      // Line 2: Body (直接使用用户设定的愿望字号)
-      ctx.font = `500 ${lightboardState.bodySize || 26}px "DotGothic16", monospace`;
-      ctx.fillStyle = '#FFE4E6';
-      ctx.fillText(dispBody, 256, innerY + 140);
-
-      // Heart Message Sender Tag
-      ctx.font = 'bold 12px "DotGothic16", monospace';
-      ctx.fillStyle = '#F472B6';
-      ctx.fillText('💖 MESSAGE SENDER 💖', 256, innerY + 200);
-
-      // Line 3: Big Sender Name (直接使用用户设定的大名字字号)
-      ctx.font = `900 ${lightboardState.nameSize || 42}px "DotGothic16", monospace`;
-      ctx.fillStyle = '#FFD700';
-      ctx.fillText(dispName, 256, innerY + 250);
-
-      ctx.restore();
-      return;
     }
 
     // Default: Multi-bubble Livestream render
@@ -585,48 +261,42 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const handleStartExport = async () => {
     setIsExporting(true);
 
+    let lightboardRenderer: Awaited<ReturnType<typeof createLightboardRenderer>> | undefined;
+    setProgress({ phase: 'preparing', currentFrame: 0, totalFrames: Math.floor(totalDuration * fps), percentage: 0, message: '正在准备预览样式与字体…' });
     try {
       const offscreenCanvas = document.createElement('canvas');
       offscreenCanvas.width = 512;
       offscreenCanvas.height = 2400;
-
+      if (displayMode === 'fan-lightboard' && lightboardState) {
+        lightboardRenderer = await createLightboardRenderer(lightboardState, settings.bubbleScale);
+      }
+      const previewBackground = settings.bgMode === 'light' ? '#f4f4f5'
+        : settings.bgMode === 'green' ? '#00ff00'
+        : settings.bgMode === 'dark' ? '#09090b' : undefined;
+      const background = exportFormat === 'chroma-green' ? '#00ff00'
+        : exportFormat === 'webm' ? (previewBackground || '#09090b')
+        : transparentBackground ? undefined : previewBackground;
+      const drawFrame = async (time: number) => {
+        if (lightboardRenderer) {
+          await lightboardRenderer.draw(offscreenCanvas, time, background);
+        } else {
+          await renderFrameToCanvas(offscreenCanvas, time, 'transparent');
+          if (background) {
+            const ctx = offscreenCanvas.getContext('2d')!;
+            ctx.save();
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.fillStyle = background;
+            ctx.fillRect(0, 0, 512, 2400);
+            ctx.restore();
+          }
+        }
+      };
       if (exportFormat === 'png-sequence') {
-        // Lossless transparent PNG sequence in ZIP
-        const zipBlob = await exportFrameSequenceZip(
-          offscreenCanvas,
-          async (timeSec) => {
-            await renderFrameToCanvas(offscreenCanvas, timeSec, 'transparent');
-          },
-          totalDuration,
-          fps,
-          (p) => setProgress(p)
-        );
-
+        const zipBlob = await exportFrameSequenceZip(offscreenCanvas, drawFrame, totalDuration, fps, setProgress);
         downloadBlob(zipBlob, `StreamChat_512x2400_${displayMode}_${fps}fps.zip`);
       } else {
-        // Real-time canvas recording into WebM with alpha or green screen
-        const bg = exportFormat === 'chroma-green' ? 'chroma-green' : 'transparent';
-        const startTime = performance.now();
-        const durationMs = totalDuration * 1000;
-
-        // Render continuously on canvas during recording
-        const animInterval = setInterval(() => {
-          const elapsedSec = (performance.now() - startTime) / 1000;
-          renderFrameToCanvas(offscreenCanvas, elapsedSec, bg);
-        }, 1000 / fps);
-
-        const videoBlob = await recordStreamToWebM(
-          offscreenCanvas,
-          durationMs,
-          fps,
-          (p) => setProgress(p)
-        );
-
-        clearInterval(animInterval);
-        downloadBlob(
-          videoBlob,
-          `StreamChat_512x2400_${displayMode}_${exportFormat === 'chroma-green' ? 'GreenScreen' : 'Alpha'}.webm`
-        );
+        const videoBlob = await exportFramesToWebM(offscreenCanvas, drawFrame, totalDuration, fps, setProgress);
+        downloadBlob(videoBlob, `StreamChat_512x2400_${displayMode}_${exportFormat === 'chroma-green' ? 'GreenScreen' : 'Preview'}.webm`);
       }
     } catch (err) {
       console.error('Export failed:', err);
@@ -635,9 +305,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         currentFrame: 0,
         totalFrames: 0,
         percentage: 0,
-        message: '导出失败，请重试或尝试 PNG 序列格式。',
+        message: err instanceof Error ? err.message : '导出失败，请重试或尝试 PNG 序列格式。',
       });
     } finally {
+      lightboardRenderer?.dispose();
       setIsExporting(false);
     }
   };
@@ -649,7 +320,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         <div className="flex items-center justify-between pb-3 border-b border-white/10">
           <div className="flex items-center gap-2">
             <Film className="w-5 h-5 text-indigo-400" />
-            <h2 className="font-bold text-white text-base">导出透明视频 / 剪辑素材 (Export)</h2>
+            <h2 className="font-bold text-white text-base">导出视频 / 无损图片序列</h2>
           </div>
           {!isExporting && (
             <button
@@ -668,7 +339,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               精准规格：512 宽 × 2400 高 ({displayMode === 'fan-lightboard' ? '粉丝影院点阵灯牌' : '垂直直播弹幕列'})
             </div>
             <div className="text-[11px] text-zinc-400 mt-0.5">
-              内置透明通道与点阵 Shuffle 动效，直接拖入视频剪辑软件。
+              灯牌与预览共用画面，保留点阵、氛围光与动效；不包含编辑按钮。
             </div>
           </div>
           <span className="font-mono text-xs font-bold text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded">
@@ -683,9 +354,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <button
               type="button"
               disabled={isExporting}
-              onClick={() => setExportFormat('webm-alpha')}
+              onClick={() => setExportFormat('webm')}
               className={`p-3 rounded-xl border text-left flex items-start gap-3 transition-all cursor-pointer ${
-                exportFormat === 'webm-alpha'
+                exportFormat === 'webm'
                   ? 'border-indigo-400 bg-indigo-600/20 shadow-md'
                   : 'border-white/10 bg-zinc-900/60 hover:bg-zinc-800 text-zinc-400'
               }`}
@@ -693,13 +364,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <Film className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
               <div>
                 <div className="font-bold text-xs text-white flex items-center gap-2">
-                  <span>透明视频 (Transparent WebM / VP9 Alpha)</span>
+                  <span>完整画面视频 (WebM)</span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    推荐
+                    视频
                   </span>
                 </div>
                 <div className="text-[11px] text-zinc-400 mt-0.5">
-                  原生内置透明 Alpha 通道，适用于 DaVinci Resolve、Premiere Pro、OBS、Final Cut。
+                  逐帧编码，保留预览底色；透明预览以深色底输出。需要透明光晕请选择 PNG 序列。
                 </div>
               </div>
             </button>
@@ -717,13 +388,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <Archive className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
               <div>
                 <div className="font-bold text-xs text-white flex items-center gap-2">
-                  <span>无损透明 PNG 图片序列 (.ZIP)</span>
+                  <span>无损 PNG 图片序列 (.ZIP)</span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                    剪辑万能
+                    保真推荐
                   </span>
                 </div>
                 <div className="text-[11px] text-zinc-400 mt-0.5">
-                  逐帧离线渲染，100%零丢帧与完美透明度。任意剪辑软件直接「导入为图像序列」。
+                  逐帧保存点阵、光晕和透明度。在支持的剪辑软件中选择「导入为图像序列」。
                 </div>
               </div>
             </button>
@@ -742,12 +413,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <div>
                 <div className="font-bold text-xs text-white">绿幕抠像视频 (Chroma Key Green Video)</div>
                 <div className="text-[11px] text-zinc-400 mt-0.5">
-                  标准 #00FF00 纯绿背景，剪辑软件中使用「超级键 / 超级色度键」一键抠出。
+                  纯绿背景视频。抠像会影响半透明光晕；需要完整光晕建议使用 PNG 序列。
                 </div>
               </div>
             </button>
           </div>
         </div>
+
+        {exportFormat === 'png-sequence' && (
+          <label className="flex items-center gap-2 text-xs text-zinc-300">
+            <input type="checkbox" checked={transparentBackground} disabled={isExporting}
+              onChange={(event) => setTransparentBackground(event.target.checked)} />
+            透明底色（仅去除舞台底色，保留灯牌背景、点阵与光晕）
+          </label>
+        )}
 
         {/* Frame Rate Selection */}
         <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-950/60 border border-white/10 text-xs">
@@ -829,3 +508,4 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     </div>
   );
 };
+

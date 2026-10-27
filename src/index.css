@@ -313,3 +313,12 @@ body {
   animation: neonBreathing 2.4s infinite ease-in-out;
 }
 
+
+
+/* Preserve artwork geometry while omitting editor controls from exported frames. */
+[data-export-root] [data-export-control] {
+  visibility: hidden !important;
+}
+[data-export-root] * {
+  transition: none !important;
+}
